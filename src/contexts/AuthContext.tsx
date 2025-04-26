@@ -79,24 +79,30 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const register = async (userData: Partial<User> & { password: string }) => {
     setIsLoading(true);
     try {
-      // This is a mock registration - in a real app, this would be an API call
-      // Simulating API response delay
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const response = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: userData.name,
+          email: userData.email,
+          phone: userData.phone,
+          password: userData.password,
+          role: 'rider'
+        })
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Registration failed');
+      }
+  
+      const { user, token } = await response.json();
       
-      // Mock user for demo purposes
-      const mockUser: User = {
-        id: "r" + Math.floor(Math.random() * 1000000),
-        name: userData.name || "New Rider",
-        email: userData.email || "rider@example.com",
-        phone: userData.phone || "+1234567890",
-        vehicleType: userData.vehicleType || "Motorcycle",
-        isVerified: false, // New riders need verification
-        rating: 5.0, // Starting rating
-        walletBalance: 0,
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem("user", JSON.stringify(mockUser));
+      // Store both user and token
+      setUser(user);
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('token', token);
+  
     } catch (error) {
       console.error("Registration failed:", error);
       throw error;
