@@ -102,12 +102,13 @@ const Register = () => {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
+        vehicleType: formData.vehicleType,
         password: formData.password,
       });
       
       toast({
         title: "Registration successful",
-        description: "Please complete verification steps",
+        description: "Welcome to Quick Wheels! Your account is pending verification.",
       });
       
       navigate("/verification-pending");
@@ -115,7 +116,7 @@ const Register = () => {
       toast({
         variant: "destructive",
         title: "Registration failed",
-        description: error.message,
+        description: "There was an error creating your account. Please try again.",
       });
     } finally {
       setIsLoading(false);

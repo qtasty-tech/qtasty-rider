@@ -18,7 +18,6 @@ import Earnings from "./pages/Earnings";
 import Profile from "./pages/Profile";
 import Help from "./pages/Help";
 import NotFound from "./pages/NotFound";
-import UploadDocuments from "./pages/UploadDocuments";
 
 const queryClient = new QueryClient();
 
@@ -58,9 +57,6 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/verification-pending" element={<VerificationPending />} />
-              <Route path="/upload-documents" element={<UploadDocuments />} />
-              
-              {/* Public Routes */}
               
               {/* Protected Routes */}
               <Route path="/" element={
