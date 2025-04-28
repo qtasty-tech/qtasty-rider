@@ -26,12 +26,22 @@ const Login = () => {
         description: "Welcome back to Quick Wheels!",
       });
       navigate("/");
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Login failed",
-        description: "Please check your credentials and try again.",
-      });
+    } catch (error: any) {
+      if (error.message === 'pending-verification') {
+        navigate('/verification-pending');
+      } else if (error.message === 'Please register as a rider first.') {
+        toast({
+          variant: "destructive",
+          title: "Login failed",
+          description: error.message,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Login failed",
+          description: error.message || "Please check your credentials and try again.",
+        });
+      }
     } finally {
       setIsLoading(false);
     }

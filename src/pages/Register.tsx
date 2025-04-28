@@ -1,10 +1,8 @@
-
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -16,7 +14,6 @@ const Register = () => {
     phone: "",
     password: "",
     confirmPassword: "",
-    vehicleType: "motorcycle",
   });
   const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuth();
@@ -26,10 +23,6 @@ const Register = () => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleVehicleChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, vehicleType: value }));
   };
 
   const validateStep1 = () => {
@@ -83,8 +76,6 @@ const Register = () => {
   const nextStep = () => {
     if (step === 1 && validateStep1()) {
       setStep(2);
-    } else if (step === 2 && validateStep2()) {
-      setStep(3);
     }
   };
 
@@ -102,15 +93,15 @@ const Register = () => {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
-        vehicleType: formData.vehicleType,
         password: formData.password,
+        role: "rider", // set role manually since your backend supports roles
       });
-      
+
       toast({
         title: "Registration successful",
         description: "Welcome to Quick Wheels! Your account is pending verification.",
       });
-      
+
       navigate("/verification-pending");
     } catch (error) {
       toast({
@@ -133,13 +124,12 @@ const Register = () => {
 
         <div className="bg-white p-8 rounded-lg shadow-md w-full">
           <h2 className="text-2xl font-semibold mb-6">Registration</h2>
-          
+
           <div className="mb-6 flex justify-between">
             <div className={`h-2 bg-gray-200 rounded-full flex-1 mr-1 ${step >= 1 ? "bg-primary" : ""}`}></div>
-            <div className={`h-2 bg-gray-200 rounded-full flex-1 mx-1 ${step >= 2 ? "bg-primary" : ""}`}></div>
-            <div className={`h-2 bg-gray-200 rounded-full flex-1 ml-1 ${step >= 3 ? "bg-primary" : ""}`}></div>
+            <div className={`h-2 bg-gray-200 rounded-full flex-1 ml-1 ${step >= 2 ? "bg-primary" : ""}`}></div>
           </div>
-          
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {step === 1 && (
               <>
@@ -155,7 +145,7 @@ const Register = () => {
                     required
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -168,7 +158,7 @@ const Register = () => {
                     required
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone Number</Label>
                   <Input
@@ -183,7 +173,7 @@ const Register = () => {
                 </div>
               </>
             )}
-            
+
             {step === 2 && (
               <>
                 <div className="space-y-2">
@@ -198,7 +188,7 @@ const Register = () => {
                     required
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm Password</Label>
                   <Input
@@ -213,33 +203,7 @@ const Register = () => {
                 </div>
               </>
             )}
-            
-            {step === 3 && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="vehicleType">Vehicle Type</Label>
-                  <Select value={formData.vehicleType} onValueChange={handleVehicleChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select vehicle type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bicycle">Bicycle</SelectItem>
-                      <SelectItem value="motorcycle">Motorcycle</SelectItem>
-                      <SelectItem value="car">Car</SelectItem>
-                      <SelectItem value="van">Van</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2 mt-4">
-                  <p className="text-sm text-gray-600 mb-4">
-                    By registering, you agree to our Terms of Service and Privacy Policy.
-                    You'll need to complete document verification after registration.
-                  </p>
-                </div>
-              </>
-            )}
-            
+
             <div className="flex justify-between mt-6">
               {step > 1 && (
                 <Button
@@ -251,8 +215,8 @@ const Register = () => {
                   Back
                 </Button>
               )}
-              
-              {step < 3 ? (
+
+              {step < 2 ? (
                 <Button
                   type="button"
                   onClick={nextStep}
@@ -271,7 +235,7 @@ const Register = () => {
               )}
             </div>
           </form>
-          
+
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Already have an account?{" "}

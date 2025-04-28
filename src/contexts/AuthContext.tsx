@@ -1,26 +1,103 @@
+import { createContext, useContext, useState, useEffect } from "react";
+import axios from "axios";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+interface User {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: "customer" | "admin" | "restaurant" | "rider";
+  isVerified: boolean;
+}
 
-export type User = {
-  id: string;
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  isLoading: boolean;
+  register: (data: RegisterData) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>; // Added login
+  logout: () => void;
+}
+
+interface RegisterData {
   name: string;
   email: string;
   phone: string;
-  vehicleType: string;
-  isVerified: boolean;
-  rating: number;
-  walletBalance: number;
-};
-
-type AuthContextType = {
-  user: User | null;
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  register: (userData: Partial<User> & { password: string }) => Promise<void>;
-};
+  password: string;
+  role: string;
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem("token");
+    const storedUser = localStorage.getItem("user");
+
+    if (storedToken && storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      setUser(parsedUser);
+      setToken(storedToken);
+    }
+    setIsLoading(false);
+  }, []);
+
+  const register = async (data: RegisterData) => {
+    try {
+      const response = await axios.post("http://localhost:5000/api/auth/register", data);
+      const { user, token } = response.data;
+      setUser(user);
+      setToken(token);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", token);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Registration failed");
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await axios.post("http://localhost:5000/api/auth/login", { email, password });
+      const { user, token } = response.data;
+
+      if (user.role !== 'rider') {
+        throw new Error('Please register as a rider first.');
+      }
+
+      if (!user.isVerified) {
+        throw new Error('pending-verification');
+      }
+
+      setUser(user);
+      setToken(token);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", token);
+    } catch (error: any) {
+      if (error.response) {
+        throw new Error(error.response.data.message || 'Login failed');
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  const logout = () => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, isLoading, register, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -28,91 +105,4 @@ export const useAuth = () => {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
-};
-
-type AuthProviderProps = {
-  children: ReactNode;
-};
-
-export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // Simulating user persistence check
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
-  }, []);
-
-  const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    try {
-      // This is a mock login - in a real app, this would be an API call
-      // Simulating API response delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      
-      // Mock user for demo purposes
-      const mockUser: User = {
-        id: "r123456",
-        name: "Demo Rider",
-        email: email,
-        phone: "+1234567890",
-        vehicleType: "Motorcycle",
-        isVerified: true,
-        rating: 4.8,
-        walletBalance: 2450.75,
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem("user", JSON.stringify(mockUser));
-    } catch (error) {
-      console.error("Login failed:", error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const register = async (userData: Partial<User> & { password: string }) => {
-    setIsLoading(true);
-    try {
-      // This is a mock registration - in a real app, this would be an API call
-      // Simulating API response delay
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      
-      // Mock user for demo purposes
-      const mockUser: User = {
-        id: "r" + Math.floor(Math.random() * 1000000),
-        name: userData.name || "New Rider",
-        email: userData.email || "rider@example.com",
-        phone: userData.phone || "+1234567890",
-        vehicleType: userData.vehicleType || "Motorcycle",
-        isVerified: false, // New riders need verification
-        rating: 5.0, // Starting rating
-        walletBalance: 0,
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem("user", JSON.stringify(mockUser));
-    } catch (error) {
-      console.error("Registration failed:", error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem("user");
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, register }}>
-      {children}
-    </AuthContext.Provider>
-  );
 };
