@@ -63,6 +63,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const response = await axios.post("http://localhost:5000/api/auth/login", { email, password });
       const { user, token } = response.data;
+      setUser(user);
+      setToken(token);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", token);
 
       if (user.role !== 'rider') {
         throw new Error('Please register as a rider first.');
