@@ -29,7 +29,7 @@ const UploadDocuments = () => {
     formData.append("userId", user?._id || "");
 
     try {
-      const response = await fetch("http://localhost:9000/api/deliveries/riders", {
+      const response = await fetch("http://localhost:8000/api/riders", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
