@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+// src/components/Home.tsx
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { MapPin, Phone, Clock, AlertTriangle } from "lucide-react";
+import { MapPin, Clock, AlertTriangle } from "lucide-react";
+import { useJsApiLoader, GoogleMap, Marker } from "@react-google-maps/api";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -8,15 +10,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRider } from "@/contexts/RiderContext";
-import { GoogleMap, Marker, LoadScript } from "@react-google-maps/api";
+import LocationPicker from "@/components/LocationPicker";
 
-const mapContainerStyle = {
-  width: "100%",
-  height: "300px",
-};
+const mapContainerStyle = { width: "100%", height: "300px" };
 
-const Home = () => {
+const Home: React.FC = () => {
   const { user } = useAuth();
+  const riderCtx = useRider();
+
+  // Destructure everything except fetchPendingOrders,
+  // supply a no-op fallback if it's missing.
   const {
     availability,
     setAvailability,
@@ -27,22 +30,53 @@ const Home = () => {
     updateOrderStatus,
     completeOrder,
     earnings,
-  } = useRider();
-  const [orderTimer, setOrderTimer] = useState(30);
-  const [showMap, setShowMap] = useState<"restaurant" | "customer" | null>(
-    null
-  );
+  } = riderCtx;
+
+  const fetchPendingOrders: (id: string) => Promise<void> =
+    riderCtx.fetchPendingOrders ??
+    (async (_: string) => {
+      console.warn("⚠️ fetchPendingOrders not implemented in RiderContext");
+    });
+
   const { toast } = useToast();
+  const [orderTimer, setOrderTimer] = useState(30);
+  const [showMap, setShowMap] = useState<"restaurant" | "customer" | null>(null);
+  const [riderLocation, setRiderLocation] = useState<[number, number]>([0, 0]);
 
-  // Countdown timer for pending order
+  // Updated getStoredRiderId function
+  const getStoredRiderId = () => {
+    const storedRider = localStorage.getItem("rider");
+    if (!storedRider) return null;
+
+    try {
+      const parsed = JSON.parse(storedRider);
+      return parsed._id;
+    } catch (err) {
+      console.error("Failed to parse rider from localStorage:", err);
+      return null;
+    }
+  };
+
+  // Load Maps API for active-delivery map
+  const { isLoaded: isMapLoaded, loadError: mapLoadError } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY!,
+  });
+
+  // 1) Fetch pending orders on mount (or when user ID changes)
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    const riderId = user?.id || getStoredRiderId();
+    if (riderId) {
+      fetchPendingOrders(riderId);
+    }
+  }, [user?.id, fetchPendingOrders]);
 
+  // 2) Countdown logic for pending order
+  useEffect(() => {
+    let iv: NodeJS.Timeout;
     if (pendingOrder && orderTimer > 0) {
-      interval = setInterval(() => {
-        setOrderTimer((prev) => prev - 1);
-      }, 1000);
-    } else if (orderTimer === 0 && pendingOrder) {
+      iv = setInterval(() => setOrderTimer((t) => t - 1), 1000);
+    } else if (pendingOrder && orderTimer === 0) {
       declineOrder();
       setOrderTimer(30);
       toast({
@@ -51,28 +85,27 @@ const Home = () => {
         variant: "destructive",
       });
     }
-
     if (!pendingOrder) {
       setOrderTimer(30);
     }
-
-    return () => clearInterval(interval);
+    return () => clearInterval(iv);
   }, [pendingOrder, orderTimer, declineOrder, toast]);
 
-  // Show restaurant map when order is accepted or arrived at restaurant
+  // 3) Decide which map (restaurant vs customer) to show
   useEffect(() => {
     if (
       currentOrder &&
       ["in-progress", "arrived_at_restaurant"].includes(currentOrder.status)
     ) {
       setShowMap("restaurant");
-    } else if (currentOrder && currentOrder.status === "en_route") {
+    } else if (currentOrder?.status === "en_route") {
       setShowMap("customer");
     } else {
       setShowMap(null);
     }
   }, [currentOrder]);
 
+  // 4) Availability toggle handler
   const handleAvailabilityChange = (checked: boolean) => {
     if (checked) {
       setAvailability("online");
@@ -89,6 +122,7 @@ const Home = () => {
     }
   };
 
+  // 5) Accept / Decline order
   const handleAcceptOrder = () => {
     if (pendingOrder) {
       acceptOrder(pendingOrder);
@@ -98,7 +132,6 @@ const Home = () => {
       });
     }
   };
-
   const handleDeclineOrder = () => {
     declineOrder();
     toast({
@@ -107,63 +140,122 @@ const Home = () => {
     });
   };
 
+  // 6) Update order status
   const handleUpdateStatus = (
     status: "in-progress" | "pick-up" | "en_route" | "completed"
   ) => {
     updateOrderStatus(status);
-
     if (status === "in-progress") {
       toast({
         title: "Arrived at restaurant",
         description: `Show this code to staff: ${currentOrder?.orderCode}`,
       });
     } else if (status === "pick-up") {
-      toast({
-        title: "Order picked up",
-        description: "Heading to customer.",
-      });
+      toast({ title: "Order picked up", description: "Heading to customer." });
     } else if (status === "en_route") {
       toast({
         title: "En route to customer",
-        description: "You're on your way to the customer.",
+        description: "You're on your way!",
       });
     }
   };
-
   const handleCompleteDelivery = () => {
     completeOrder();
-    toast({
-      title: "Delivery completed",
-      description: "Great job! The delivery has been marked as completed.",
-    });
+    toast({ title: "Delivery completed", description: "Great job!" });
   };
+
+  // 7) Location update handler: logs, toasts & backend PUT
+  const handleLocationUpdate = async ({ lat, lng }: { lat: number; lng: number }) => {
+    console.log("[LocationPicker] coords:", lat, lng);
+    setRiderLocation([lng, lat]);
+  
+    const riderId = user?.id || getStoredRiderId(); // fallback to localStorage
+    if (!riderId) {
+      console.warn("No rider ID; skipping server update");
+      return;
+    }
+  
+    const token = localStorage.getItem("token"); // get auth token if protected route
+  
+    try {
+      const res = await fetch(
+        `http://localhost:8000/api/riders/updateLocation/${riderId}`, // match backend route
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "", // include if auth required
+          },
+          body: JSON.stringify({
+            location: {
+              coordinates: [lng, lat],
+            },
+          }),
+        }
+      );
+  
+      if (!res.ok) {
+        const msg = await res.text();
+        console.error("Update failed:", msg);
+        toast({
+          title: "Location update failed",
+          description: res.statusText,
+          variant: "destructive",
+        });
+      } else {
+        console.log("✅ Location updated");
+        toast({
+          title: "Location saved",
+          description: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+        });
+      }
+    } catch (error) {
+      console.error("Location update error:", error);
+      toast({
+        title: "Error updating location",
+        description: "Could not connect to server.",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // 8) Compute mapCenter for active order
+  const mapCenter = useMemo(() => {
+    if (!currentOrder || !showMap) return { lat: 0, lng: 0 };
+    const coords =
+      showMap === "restaurant"
+        ? currentOrder.restaurant.location.coordinates
+        : currentOrder.customer.location.coordinates;
+    return { lat: coords[1], lng: coords[0] };
+  }, [currentOrder, showMap]);
 
   return (
     <div className="min-h-screen pb-20">
       {/* Header */}
-      <header className="bg-white shadow-sm p-4">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-bold text-primary">Quick Wheels</h1>
-            <p className="text-sm text-gray-500">Delivery Partner</p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="text-right">
-              <p className="text-sm font-medium">{user?.name}</p>
-              <p className="text-xs text-gray-500">
-                ⭐ {user?.rating || "N/A"}
-              </p>
-            </div>
-            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-600">
-              {user?.name?.charAt(0) || "U"}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main content */}
+      <header className="bg-white shadow-md p-4 md:p-5">
+  <div className="flex justify-between items-center max-w-7xl mx-auto">
+    <div className="flex items-center space-x-2">
+      <span className="text-gray-900 text-3xl font-bold flex items-center">
+        Q<span className="text-[#F15D36]">Tasty</span>
+      </span>
+      <span className="text-sm font-medium text-gray-600 border-l border-gray-300 pl-3 ml-2">Delivery Partner</span>
+    </div>
+    
+  </div>
+</header>
+      {/* Main Content */}
       <main className="p-4">
-        {/* Availability toggle */}
+        {/* Location Picker + Debug */}
+        <div className="bg-white rounded-lg shadow-md p-4 mb-4">
+          <h2 className="font-semibold mb-3">Update Your Location</h2>
+          <LocationPicker onLocationUpdate={handleLocationUpdate} />
+          <p className="text-xs text-gray-500 mt-2">
+            Current location: {riderLocation[1].toFixed(5)},{" "}
+            {riderLocation[0].toFixed(5)}
+          </p>
+        </div>
+
+        {/* Availability Toggle */}
         <div className="bg-white rounded-lg shadow-md p-4 mb-4">
           <div className="flex items-center justify-between">
             <div>
@@ -205,7 +297,7 @@ const Home = () => {
           </div>
         </div>
 
-        {/* Earnings Summary */}
+        {/* Today's Earnings */}
         {!currentOrder && !pendingOrder && (
           <Card className="mb-4">
             <CardContent className="p-4">
@@ -232,37 +324,6 @@ const Home = () => {
                 <span className="font-medium">{orderTimer}s</span>
               </div>
             </div>
-
-            <div className="bg-gray-50 rounded p-3 mb-3">
-              <div className="flex items-start mb-2">
-                <div className="min-w-8 mt-1">
-                  <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                    <MapPin size={14} className="text-white" />
-                  </div>
-                </div>
-                <div>
-                  <p className="font-medium">{pendingOrder.restaurant.name}</p>
-                  <p className="text-sm text-gray-600">
-                    {pendingOrder.restaurant.address}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start">
-                <div className="min-w-8 mt-1">
-                  <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center">
-                    <MapPin size={14} className="text-white" />
-                  </div>
-                </div>
-                <div>
-                  <p className="font-medium">{pendingOrder.customer.name}</p>
-                  <p className="text-sm text-gray-600">
-                    {pendingOrder.customer.address}
-                  </p>
-                </div>
-              </div>
-            </div>
-
             <div className="flex justify-between items-center mb-4">
               <div>
                 <p className="text-sm text-gray-600">Distance</p>
@@ -279,7 +340,6 @@ const Home = () => {
                 </p>
               </div>
             </div>
-
             <div className="flex space-x-2">
               <Button
                 variant="outline"
@@ -298,7 +358,7 @@ const Home = () => {
           </div>
         )}
 
-        {/* Current Active Order */}
+        {/* Active Order */}
         {currentOrder && (
           <div className="bg-white rounded-lg shadow-md p-4 mb-4">
             <div className="mb-3 flex justify-between items-center">
@@ -322,121 +382,71 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Google Map */}
+            {/* Map (restaurant or customer) */}
             {showMap && (
-              <LoadScript
-                googleMapsApiKey={"AIzaSyB0zc090Yi-GBjwOs7kG6iqVPR7XJPoDvo"}
-              >
-                <GoogleMap
-                  mapContainerStyle={mapContainerStyle}
-                  center={{
-                    lat:
-                      showMap === "restaurant"
-                        ? currentOrder.restaurant.location.coordinates[1]
-                        : currentOrder.customer.location.coordinates[1],
-                    lng:
-                      showMap === "restaurant"
-                        ? currentOrder.restaurant.location.coordinates[0]
-                        : currentOrder.customer.location.coordinates[0],
-                  }}
-                  zoom={15}
-                >
-                  <Marker
-                    position={{
-                      lat:
-                        showMap === "restaurant"
-                          ? currentOrder.restaurant.location.coordinates[1]
-                          : currentOrder.customer.location.coordinates[1],
-                      lng:
-                        showMap === "restaurant"
-                          ? currentOrder.restaurant.location.coordinates[0]
-                          : currentOrder.customer.location.coordinates[0],
-                    }}
-                  />
-                </GoogleMap>
-              </LoadScript>
+              <>
+                {!isMapLoaded ? (
+                  <div>Loading map…</div>
+                ) : mapLoadError ? (
+                  <div>Error loading map</div>
+                ) : (
+                  <GoogleMap
+                    mapContainerStyle={mapContainerStyle}
+                    center={mapCenter}
+                    zoom={15}
+                  >
+                    <Marker position={mapCenter} />
+                  </GoogleMap>
+                )}
+              </>
             )}
 
-            {/* Order info */}
+            {/* Order route info */}
             <div className="bg-gray-50 rounded p-3 mb-3">
+              {/* Restaurant */}
               <div className="flex items-start mb-2">
                 <div className="min-w-8 mt-1">
                   <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
                     <MapPin size={14} className="text-white" />
                   </div>
                 </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">
-                        {currentOrder.restaurant.name}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {currentOrder.restaurant.address}
-                      </p>
-                    </div>
-                    {currentOrder.restaurant.phone && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        asChild
-                      >
-                        <a href={`tel:${currentOrder.restaurant.phone}`}>
-                          <Phone size={16} />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
+                <div>
+                  <p className="font-medium">
+                    {currentOrder.restaurant.name}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {currentOrder.restaurant.address}
+                  </p>
                 </div>
               </div>
-
+              {/* Customer */}
               <div className="flex items-start">
                 <div className="min-w-8 mt-1">
                   <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center">
                     <MapPin size={14} className="text-white" />
                   </div>
                 </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">
-                        {currentOrder.customer.name}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {currentOrder.customer.address}
-                      </p>
-                    </div>
-                    {currentOrder.customer.phone && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        asChild
-                      >
-                        <a href={`tel:${currentOrder.customer.phone}`}>
-                          <Phone size={16} />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
+                <div>
+                  <p className="font-medium">{currentOrder.customer.name}</p>
+                  <p className="text-sm text-gray-600">
+                    {currentOrder.customer.address}
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Order details */}
+            {/* Items */}
             <div className="mb-4">
               <h3 className="font-medium mb-2">Order Details</h3>
               <div className="bg-gray-50 rounded p-3">
-                {currentOrder.items.map((item, index) => (
-                  <div
-                    key={index}
-                    className="flex justify-between text-sm mb-1"
-                  >
+                {currentOrder.items.map((item, idx) => (
+                  <div key={idx} className="flex justify-between text-sm mb-1">
                     <span>
-                      {item.quantity}x {item.name}
+                      {item.quantity}× {item.name}
                     </span>
-                    <span>${(item.price * item.quantity).toFixed(2)}</span>
+                    <span>
+                      ${(item.price * item.quantity).toFixed(2)}
+                    </span>
                   </div>
                 ))}
                 <div className="border-t border-gray-200 mt-2 pt-2 flex justify-between font-medium">
@@ -455,7 +465,9 @@ const Home = () => {
                     className="text-secondary mr-2 flex-shrink-0 mt-0.5"
                   />
                   <div>
-                    <p className="font-medium text-sm">Special Instructions:</p>
+                    <p className="font-medium text-sm">
+                      Special Instructions:
+                    </p>
                     <p className="text-sm">
                       {currentOrder.specialInstructions}
                     </p>
@@ -464,7 +476,7 @@ const Home = () => {
               </div>
             )}
 
-            {/* Payment method and order code */}
+            {/* Payment & Code */}
             <div className="mb-4 flex items-center">
               <p className="text-sm bg-gray-100 px-3 py-1 rounded-full">
                 Payment:{" "}
@@ -477,7 +489,9 @@ const Home = () => {
               {currentOrder.status === "in-progress" && (
                 <p className="text-sm bg-secondary/20 px-3 py-1 rounded-full ml-2">
                   Order Code:{" "}
-                  <span className="font-medium">{currentOrder.orderCode}</span>
+                  <span className="font-medium">
+                    {currentOrder.orderCode}
+                  </span>
                 </p>
               )}
             </div>
@@ -491,7 +505,6 @@ const Home = () => {
                 Order Picked Up
               </Button>
             )}
-
             {currentOrder.status === "pick-up" && (
               <Button
                 className="w-full bg-primary hover:bg-primary/90"
@@ -500,7 +513,6 @@ const Home = () => {
                 En Route to Customer
               </Button>
             )}
-
             {currentOrder.status === "en_route" && (
               <Button
                 className="w-full bg-accent hover:bg-accent/90"
@@ -512,7 +524,7 @@ const Home = () => {
           </div>
         )}
 
-        {/* No orders */}
+        {/* No orders, online */}
         {!currentOrder && !pendingOrder && availability === "online" && (
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
             <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -526,6 +538,7 @@ const Home = () => {
           </div>
         )}
 
+        {/* No orders, offline */}
         {!currentOrder && !pendingOrder && availability === "offline" && (
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
             <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
