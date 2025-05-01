@@ -1,10 +1,8 @@
 
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
 
 const VerificationPending = () => {
-  const { user } = useAuth();
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50">

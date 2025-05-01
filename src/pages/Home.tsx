@@ -1,6 +1,5 @@
-
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { MapPin, Phone, Clock, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -9,28 +8,36 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRider } from "@/contexts/RiderContext";
+import { GoogleMap, Marker, LoadScript } from "@react-google-maps/api";
+
+const mapContainerStyle = {
+  width: "100%",
+  height: "300px",
+};
 
 const Home = () => {
   const { user } = useAuth();
-  const { 
-    availability, 
-    setAvailability, 
-    currentOrder, 
-    pendingOrder, 
-    acceptOrder, 
+  const {
+    availability,
+    setAvailability,
+    currentOrder,
+    pendingOrder,
+    acceptOrder,
     declineOrder,
     updateOrderStatus,
     completeOrder,
-    earnings
+    earnings,
   } = useRider();
   const [orderTimer, setOrderTimer] = useState(30);
+  const [showMap, setShowMap] = useState<"restaurant" | "customer" | null>(
+    null
+  );
   const { toast } = useToast();
-  const navigate = useNavigate();
-  
+
   // Countdown timer for pending order
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    
+
     if (pendingOrder && orderTimer > 0) {
       interval = setInterval(() => {
         setOrderTimer((prev) => prev - 1);
@@ -44,16 +51,28 @@ const Home = () => {
         variant: "destructive",
       });
     }
-    
+
     if (!pendingOrder) {
       setOrderTimer(30);
     }
-    
-    return () => {
-      clearInterval(interval);
-    };
+
+    return () => clearInterval(interval);
   }, [pendingOrder, orderTimer, declineOrder, toast]);
-  
+
+  // Show restaurant map when order is accepted or arrived at restaurant
+  useEffect(() => {
+    if (
+      currentOrder &&
+      ["in-progress", "arrived_at_restaurant"].includes(currentOrder.status)
+    ) {
+      setShowMap("restaurant");
+    } else if (currentOrder && currentOrder.status === "en_route") {
+      setShowMap("customer");
+    } else {
+      setShowMap(null);
+    }
+  }, [currentOrder]);
+
   const handleAvailabilityChange = (checked: boolean) => {
     if (checked) {
       setAvailability("online");
@@ -69,37 +88,39 @@ const Home = () => {
       });
     }
   };
-  
+
   const handleAcceptOrder = () => {
     if (pendingOrder) {
       acceptOrder(pendingOrder);
       toast({
         title: "Order accepted",
-        description: "You've accepted the delivery. Head to the restaurant for pickup.",
+        description: "Head to the restaurant for pickup.",
       });
     }
   };
-  
+
   const handleDeclineOrder = () => {
     declineOrder();
     toast({
       title: "Order declined",
-      description: "You've declined the delivery. We'll find another driver.",
+      description: "We'll find another driver.",
     });
   };
-  
-  const handleUpdateStatus = (status: "arrived_at_restaurant" | "picked_up" | "en_route" | "delivered") => {
+
+  const handleUpdateStatus = (
+    status: "in-progress" | "pick-up" | "en_route" | "completed"
+  ) => {
     updateOrderStatus(status);
-    
-    if (status === "arrived_at_restaurant") {
+
+    if (status === "in-progress") {
       toast({
         title: "Arrived at restaurant",
         description: `Show this code to staff: ${currentOrder?.orderCode}`,
       });
-    } else if (status === "picked_up") {
+    } else if (status === "pick-up") {
       toast({
         title: "Order picked up",
-        description: "You've picked up the order. Heading to customer.",
+        description: "Heading to customer.",
       });
     } else if (status === "en_route") {
       toast({
@@ -108,7 +129,7 @@ const Home = () => {
       });
     }
   };
-  
+
   const handleCompleteDelivery = () => {
     completeOrder();
     toast({
@@ -116,7 +137,7 @@ const Home = () => {
       description: "Great job! The delivery has been marked as completed.",
     });
   };
-  
+
   return (
     <div className="min-h-screen pb-20">
       {/* Header */}
@@ -129,15 +150,17 @@ const Home = () => {
           <div className="flex items-center space-x-2">
             <div className="text-right">
               <p className="text-sm font-medium">{user?.name}</p>
-              <p className="text-xs text-gray-500">⭐ {user?.rating}</p>
+              <p className="text-xs text-gray-500">
+                ⭐ {user?.rating || "N/A"}
+              </p>
             </div>
             <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-600">
-              {user?.name.charAt(0)}
+              {user?.name?.charAt(0) || "U"}
             </div>
           </div>
         </div>
       </header>
-      
+
       {/* Main content */}
       <main className="p-4">
         {/* Availability toggle */}
@@ -146,11 +169,11 @@ const Home = () => {
             <div>
               <h2 className="font-semibold">Your Status</h2>
               <p className="text-sm text-gray-500">
-                {availability === "online" 
-                  ? "You're online and ready for deliveries" 
-                  : availability === "busy" 
-                    ? "You're currently on a delivery" 
-                    : "You're offline - go online to receive orders"}
+                {availability === "online"
+                  ? "You're online and ready for deliveries"
+                  : availability === "busy"
+                  ? "You're currently on a delivery"
+                  : "You're offline - go online to receive orders"}
               </p>
             </div>
             <div className="flex items-center space-x-2">
@@ -163,26 +186,34 @@ const Home = () => {
                 onCheckedChange={handleAvailabilityChange}
                 disabled={availability === "busy"}
               />
-              <span className={`status-badge ${
-                availability === "online" 
-                  ? "status-badge-online" 
-                  : availability === "busy" 
-                    ? "status-badge-busy" 
+              <span
+                className={`status-badge ${
+                  availability === "online"
+                    ? "status-badge-online"
+                    : availability === "busy"
+                    ? "status-badge-busy"
                     : "status-badge-offline"
-              }`}>
-                {availability === "online" ? "Online" : availability === "busy" ? "Busy" : "Offline"}
+                }`}
+              >
+                {availability === "online"
+                  ? "Online"
+                  : availability === "busy"
+                  ? "Busy"
+                  : "Offline"}
               </span>
             </div>
           </div>
         </div>
-        
+
         {/* Earnings Summary */}
         {!currentOrder && !pendingOrder && (
           <Card className="mb-4">
             <CardContent className="p-4">
               <h2 className="font-semibold mb-2">Today's Earnings</h2>
               <div className="flex justify-between items-center">
-                <p className="text-2xl font-bold">${earnings.today.toFixed(2)}</p>
+                <p className="text-2xl font-bold">
+                  ${earnings.today.toFixed(2)}
+                </p>
                 <Button variant="outline" asChild>
                   <Link to="/earnings">View Details</Link>
                 </Button>
@@ -190,7 +221,7 @@ const Home = () => {
             </CardContent>
           </Card>
         )}
-        
+
         {/* Pending Order */}
         {pendingOrder && (
           <div className="bg-white rounded-lg shadow-md p-4 mb-4 animate-pulse-subtle">
@@ -201,7 +232,7 @@ const Home = () => {
                 <span className="font-medium">{orderTimer}s</span>
               </div>
             </div>
-            
+
             <div className="bg-gray-50 rounded p-3 mb-3">
               <div className="flex items-start mb-2">
                 <div className="min-w-8 mt-1">
@@ -210,11 +241,13 @@ const Home = () => {
                   </div>
                 </div>
                 <div>
-                  <p className="font-medium">{pendingOrder.restaurantName}</p>
-                  <p className="text-sm text-gray-600">{pendingOrder.restaurantAddress}</p>
+                  <p className="font-medium">{pendingOrder.restaurant.name}</p>
+                  <p className="text-sm text-gray-600">
+                    {pendingOrder.restaurant.address}
+                  </p>
                 </div>
               </div>
-              
+
               <div className="flex items-start">
                 <div className="min-w-8 mt-1">
                   <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center">
@@ -222,37 +255,41 @@ const Home = () => {
                   </div>
                 </div>
                 <div>
-                  <p className="font-medium">{pendingOrder.customerName}</p>
-                  <p className="text-sm text-gray-600">{pendingOrder.customerAddress}</p>
+                  <p className="font-medium">{pendingOrder.customer.name}</p>
+                  <p className="text-sm text-gray-600">
+                    {pendingOrder.customer.address}
+                  </p>
                 </div>
               </div>
             </div>
-            
+
             <div className="flex justify-between items-center mb-4">
               <div>
                 <p className="text-sm text-gray-600">Distance</p>
-                <p className="font-medium">{pendingOrder.distance} km</p>
+                <p className="font-medium">5 km</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Estimated Time</p>
-                <p className="font-medium">{pendingOrder.estimatedDeliveryTime} mins</p>
+                <p className="font-medium">30 mins</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Earning</p>
-                <p className="font-medium text-primary">${pendingOrder.deliveryFee.toFixed(2)}</p>
+                <p className="font-medium text-primary">
+                  ${pendingOrder.deliveryFee.toFixed(2)}
+                </p>
               </div>
             </div>
-            
+
             <div className="flex space-x-2">
-              <Button 
-                variant="outline" 
-                className="flex-1 border-gray-300" 
+              <Button
+                variant="outline"
+                className="flex-1 border-gray-300"
                 onClick={handleDeclineOrder}
               >
                 Decline
               </Button>
-              <Button 
-                className="flex-1 bg-primary hover:bg-primary/90" 
+              <Button
+                className="flex-1 bg-primary hover:bg-primary/90"
                 onClick={handleAcceptOrder}
               >
                 Accept
@@ -260,24 +297,66 @@ const Home = () => {
             </div>
           </div>
         )}
-        
+
         {/* Current Active Order */}
         {currentOrder && (
           <div className="bg-white rounded-lg shadow-md p-4 mb-4">
             <div className="mb-3 flex justify-between items-center">
               <h2 className="font-semibold text-lg">Active Delivery</h2>
-              <div className={`status-badge ${
-                currentOrder.status === "accepted" ? "status-badge-online" : 
-                currentOrder.status === "arrived_at_restaurant" ? "status-badge-nearby" :
-                "status-badge-busy"
-              }`}>
-                {currentOrder.status === "accepted" ? "Heading to Pickup" : 
-                 currentOrder.status === "arrived_at_restaurant" ? "At Restaurant" :
-                 currentOrder.status === "picked_up" ? "Order Picked Up" :
-                 "En Route to Customer"}
+              <div
+                className={`status-badge ${
+                  currentOrder.status === "in-progress"
+                    ? "status-badge-online"
+                    : currentOrder.status === "pick-up"
+                    ? "status-badge-nearby"
+                    : "status-badge-busy"
+                }`}
+              >
+                {currentOrder.status === "in-progress"
+                  ? "Heading to Pickup"
+                  : currentOrder.status === "pick-up"
+                  ? "Order Picked Up"
+                  : currentOrder.status === "en_route"
+                  ? "En Route to Customer"
+                  : currentOrder.status}
               </div>
             </div>
-            
+
+            {/* Google Map */}
+            {showMap && (
+              <LoadScript
+                googleMapsApiKey={"AIzaSyB0zc090Yi-GBjwOs7kG6iqVPR7XJPoDvo"}
+              >
+                <GoogleMap
+                  mapContainerStyle={mapContainerStyle}
+                  center={{
+                    lat:
+                      showMap === "restaurant"
+                        ? currentOrder.restaurant.location.coordinates[1]
+                        : currentOrder.customer.location.coordinates[1],
+                    lng:
+                      showMap === "restaurant"
+                        ? currentOrder.restaurant.location.coordinates[0]
+                        : currentOrder.customer.location.coordinates[0],
+                  }}
+                  zoom={15}
+                >
+                  <Marker
+                    position={{
+                      lat:
+                        showMap === "restaurant"
+                          ? currentOrder.restaurant.location.coordinates[1]
+                          : currentOrder.customer.location.coordinates[1],
+                      lng:
+                        showMap === "restaurant"
+                          ? currentOrder.restaurant.location.coordinates[0]
+                          : currentOrder.customer.location.coordinates[0],
+                    }}
+                  />
+                </GoogleMap>
+              </LoadScript>
+            )}
+
             {/* Order info */}
             <div className="bg-gray-50 rounded p-3 mb-3">
               <div className="flex items-start mb-2">
@@ -289,18 +368,29 @@ const Home = () => {
                 <div className="flex-1">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-medium">{currentOrder.restaurantName}</p>
-                      <p className="text-sm text-gray-600">{currentOrder.restaurantAddress}</p>
+                      <p className="font-medium">
+                        {currentOrder.restaurant.name}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {currentOrder.restaurant.address}
+                      </p>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                      <a href={`tel:${currentOrder.restaurantPhone}`}>
-                        <Phone size={16} />
-                      </a>
-                    </Button>
+                    {currentOrder.restaurant.phone && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        asChild
+                      >
+                        <a href={`tel:${currentOrder.restaurant.phone}`}>
+                          <Phone size={16} />
+                        </a>
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex items-start">
                 <div className="min-w-8 mt-1">
                   <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center">
@@ -310,26 +400,42 @@ const Home = () => {
                 <div className="flex-1">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-medium">{currentOrder.customerName}</p>
-                      <p className="text-sm text-gray-600">{currentOrder.customerAddress}</p>
+                      <p className="font-medium">
+                        {currentOrder.customer.name}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {currentOrder.customer.address}
+                      </p>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                      <a href={`tel:${currentOrder.customerPhone}`}>
-                        <Phone size={16} />
-                      </a>
-                    </Button>
+                    {currentOrder.customer.phone && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        asChild
+                      >
+                        <a href={`tel:${currentOrder.customer.phone}`}>
+                          <Phone size={16} />
+                        </a>
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
-            
+
             {/* Order details */}
             <div className="mb-4">
               <h3 className="font-medium mb-2">Order Details</h3>
               <div className="bg-gray-50 rounded p-3">
                 {currentOrder.items.map((item, index) => (
-                  <div key={index} className="flex justify-between text-sm mb-1">
-                    <span>{item.quantity}x {item.name}</span>
+                  <div
+                    key={index}
+                    className="flex justify-between text-sm mb-1"
+                  >
+                    <span>
+                      {item.quantity}x {item.name}
+                    </span>
                     <span>${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
@@ -339,62 +445,64 @@ const Home = () => {
                 </div>
               </div>
             </div>
-            
+
             {/* Special instructions */}
             {currentOrder.specialInstructions && (
               <div className="mb-4">
                 <div className="bg-yellow-50 border-l-4 border-secondary p-3 flex">
-                  <AlertTriangle size={18} className="text-secondary mr-2 flex-shrink-0 mt-0.5" />
+                  <AlertTriangle
+                    size={18}
+                    className="text-secondary mr-2 flex-shrink-0 mt-0.5"
+                  />
                   <div>
                     <p className="font-medium text-sm">Special Instructions:</p>
-                    <p className="text-sm">{currentOrder.specialInstructions}</p>
+                    <p className="text-sm">
+                      {currentOrder.specialInstructions}
+                    </p>
                   </div>
                 </div>
               </div>
             )}
-            
-            {/* Payment method */}
+
+            {/* Payment method and order code */}
             <div className="mb-4 flex items-center">
               <p className="text-sm bg-gray-100 px-3 py-1 rounded-full">
-                Payment: <span className="font-medium">{currentOrder.paymentMethod === "cash" ? "Cash on Delivery" : "Paid by Card"}</span>
+                Payment:{" "}
+                <span className="font-medium">
+                  {currentOrder.paymentMethod === "cash"
+                    ? "Cash on Delivery"
+                    : "Paid by Card"}
+                </span>
               </p>
-              {currentOrder.status === "arrived_at_restaurant" && (
+              {currentOrder.status === "in-progress" && (
                 <p className="text-sm bg-secondary/20 px-3 py-1 rounded-full ml-2">
-                  Order Code: <span className="font-medium">{currentOrder.orderCode}</span>
+                  Order Code:{" "}
+                  <span className="font-medium">{currentOrder.orderCode}</span>
                 </p>
               )}
             </div>
-            
+
             {/* Action buttons */}
-            {currentOrder.status === "accepted" && (
-              <Button 
+            {currentOrder.status === "in-progress" && (
+              <Button
                 className="w-full bg-primary hover:bg-primary/90"
-                onClick={() => handleUpdateStatus("arrived_at_restaurant")}
-              >
-                I've Arrived at Restaurant
-              </Button>
-            )}
-            
-            {currentOrder.status === "arrived_at_restaurant" && (
-              <Button 
-                className="w-full bg-primary hover:bg-primary/90"
-                onClick={() => handleUpdateStatus("picked_up")}
+                onClick={() => handleUpdateStatus("pick-up")}
               >
                 Order Picked Up
               </Button>
             )}
-            
-            {currentOrder.status === "picked_up" && (
-              <Button 
+
+            {currentOrder.status === "pick-up" && (
+              <Button
                 className="w-full bg-primary hover:bg-primary/90"
                 onClick={() => handleUpdateStatus("en_route")}
               >
                 En Route to Customer
               </Button>
             )}
-            
+
             {currentOrder.status === "en_route" && (
-              <Button 
+              <Button
                 className="w-full bg-accent hover:bg-accent/90"
                 onClick={handleCompleteDelivery}
               >
@@ -403,7 +511,7 @@ const Home = () => {
             )}
           </div>
         )}
-        
+
         {/* No orders */}
         {!currentOrder && !pendingOrder && availability === "online" && (
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
@@ -412,12 +520,12 @@ const Home = () => {
             </div>
             <h2 className="font-semibold text-lg mb-2">Ready for Orders</h2>
             <p className="text-gray-600 mb-4">
-              You're online and will receive delivery requests soon.
-              Make sure you have enough fuel and are in your preferred delivery zone.
+              You're online and will receive delivery requests soon. Make sure
+              you have enough fuel and are in your preferred delivery zone.
             </p>
           </div>
         )}
-        
+
         {!currentOrder && !pendingOrder && availability === "offline" && (
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
             <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -427,7 +535,7 @@ const Home = () => {
             <p className="text-gray-600 mb-4">
               Toggle your status to online to start receiving delivery requests.
             </p>
-            <Button 
+            <Button
               className="bg-primary hover:bg-primary/90"
               onClick={() => handleAvailabilityChange(true)}
             >
