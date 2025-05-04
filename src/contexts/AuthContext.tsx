@@ -32,6 +32,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [rider, setRider] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -65,8 +66,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const { user, token } = response.data;
       setUser(user);
       setToken(token);
+      const riderResponse = await axios.get(`http://localhost:8000/api/riders/user/${user._id}`)
+      setRider(riderResponse.data.rider);
       localStorage.setItem("user", JSON.stringify(user));
       localStorage.setItem("token", token);
+      localStorage.setItem("rider", JSON.stringify(riderResponse.data.rider));
+
 
       if (user.role !== 'rider') {
         throw new Error('Please register as a rider first.');
