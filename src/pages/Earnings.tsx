@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
@@ -11,12 +10,61 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuth } from "@/contexts/AuthContext";
-import { useRider } from "@/contexts/RiderContext";
+
+// Dummy data
+const dummyUser = {
+  walletBalance: 245.75,
+};
+
+const dummyRiderData = {
+  earnings: {
+    today: 25.50,
+    week: 152.75,
+    month: 620.30,
+  },
+  orderHistory: [
+    {
+      id: "1",
+      restaurantName: "Pizza Palace",
+      createdAt: "2025-05-04T10:15:00Z", // Today
+      deliveryFee: 8.50,
+      distance: 3.2,
+    },
+    {
+      id: "2",
+      restaurantName: "Burger Bonanza",
+      createdAt: "2025-05-04T14:30:00Z", // Today
+      deliveryFee: 10.00,
+      distance: 5.7,
+    },
+    {
+      id: "3",
+      restaurantName: "Sushi Stop",
+      createdAt: "2025-05-02T12:00:00Z", // This week
+      deliveryFee: 7.25,
+      distance: 2.8,
+    },
+    {
+      id: "4",
+      restaurantName: "Taco Town",
+      createdAt: "2025-04-20T18:45:00Z", // This month
+      deliveryFee: 9.00,
+      distance: 4.1,
+    },
+    {
+      id: "5",
+      restaurantName: "Pasta Place",
+      createdAt: "2025-04-10T16:20:00Z", // This month
+      deliveryFee: 8.75,
+      distance: 3.9,
+    },
+  ],
+};
 
 const Earnings = () => {
-  const { user } = useAuth();
-  const { earnings, orderHistory } = useRider();
+  // Use dummy data instead of hooks
+  const user = dummyUser;
+  const { earnings, orderHistory } = dummyRiderData;
   const [selectedPeriod, setSelectedPeriod] = useState<"today" | "week" | "month">("today");
   const navigate = useNavigate();
   

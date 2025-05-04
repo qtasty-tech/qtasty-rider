@@ -1,20 +1,55 @@
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, Star, Wallet, Settings, LogOut, Check, Shield, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
 
 const Profile = () => {
-  const { user, logout } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState(true);
   
+  // Initialize user state with default values
+  const [user, setUser] = useState({
+    name: "John Doe",
+    rating: 4.8,
+    vehicleType: "bicycle",
+    email: "",
+    phone: "",
+    walletBalance: 245.75,
+  });
+
+  // Load user data from localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        // Merge localStorage data with default values for missing fields
+        setUser((prev) => ({
+          ...prev,
+          name: parsedUser.name || prev.name,
+          email: parsedUser.email || prev.email,
+          phone: parsedUser.phone || prev.phone,
+          // Keep defaults for fields not in localStorage
+          rating: parsedUser.rating || prev.rating,
+          vehicleType: parsedUser.vehicleType || prev.vehicleType,
+          walletBalance: parsedUser.walletBalance || prev.walletBalance,
+        }));
+      } catch (error) {
+        console.error("Error parsing localStorage user:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load user data from storage.",
+          variant: "destructive",
+        });
+      }
+    }
+  }, [toast]);
+
   const handleLogout = () => {
-    logout();
+    localStorage.removeItem("user"); // Clear user data on logout
     toast({
       title: "Logged out",
       description: "You have been successfully logged out.",
@@ -40,12 +75,12 @@ const Profile = () => {
             <User size={40} className="text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">{user?.name}</h1>
+            <h1 className="text-xl font-bold">{user.name}</h1>
             <div className="flex items-center mt-1">
               <Star size={16} className="mr-1 text-secondary" />
-              <span>{user?.rating}</span>
+              <span>{user.rating}</span>
               <span className="mx-2">•</span>
-              <span>{user?.vehicleType}</span>
+              <span>{user.vehicleType}</span>
             </div>
           </div>
         </div>
@@ -60,21 +95,21 @@ const Profile = () => {
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm text-gray-500">Email</p>
-                <p>{user?.email}</p>
+                <p>{user.email}</p>
               </div>
             </div>
             
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm text-gray-500">Phone</p>
-                <p>{user?.phone}</p>
+                <p>{user.phone}</p>
               </div>
             </div>
             
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm text-gray-500">Vehicle Type</p>
-                <p className="capitalize">{user?.vehicleType}</p>
+                <p className="capitalize">{user.vehicleType}</p>
               </div>
             </div>
             
@@ -105,7 +140,7 @@ const Profile = () => {
               </div>
               <div>
                 <h3 className="font-medium">Wallet Balance</h3>
-                <p className="text-xl font-bold">${user?.walletBalance.toFixed(2)}</p>
+                <p className="text-xl font-bold">${user.walletBalance.toFixed(2)}</p>
               </div>
             </div>
             <Button variant="outline" asChild>

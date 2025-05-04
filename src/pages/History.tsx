@@ -1,7 +1,6 @@
-
 import { useState } from "react";
 import { MapPin, ArrowRight, Calendar, Clock } from "lucide-react";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -9,34 +8,87 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { useRider } from "@/contexts/RiderContext";
+
+// Dummy data for orderHistory
+const dummyOrderHistory = [
+  {
+    id: "1",
+    restaurantName: "Pizza Palace",
+    createdAt: "2025-04-20T14:30:00Z",
+    status: "delivered",
+    restaurantAddress: "123 Main St, Food City, FC 12345",
+    customerAddress: "456 Elm St, Food City, FC 12345",
+    items: [
+      { name: "Margherita Pizza", quantity: 1 },
+      { name: "Garlic Bread", quantity: 2 },
+    ],
+    distance: 3.2,
+    deliveryFee: 8.5,
+  },
+  {
+    id: "2",
+    restaurantName: "Burger Bonanza",
+    createdAt: "2025-04-18T18:15:00Z",
+    status: "cancelled",
+    restaurantAddress: "789 Oak Ave, Food City, FC 12345",
+    customerAddress: "101 Pine Rd, Food City, FC 12345",
+    items: [
+      { name: "Cheeseburger", quantity: 1 },
+      { name: "Fries", quantity: 1 },
+    ],
+    distance: 5.7,
+    deliveryFee: 10.0,
+  },
+  {
+    id: "3",
+    restaurantName: "Sushi Stop",
+    createdAt: "2025-03-25T12:00:00Z",
+    status: "delivered",
+    restaurantAddress: "321 Cedar Ln, Food City, FC 12345",
+    customerAddress: "654 Birch Dr, Food City, FC 12345",
+    items: [
+      { name: "California Roll", quantity: 2 },
+      { name: "Miso Soup", quantity: 1 },
+    ],
+    distance: 2.8,
+    deliveryFee: 7.25,
+  },
+];
 
 const History = () => {
-  const { orderHistory } = useRider();
+  // Use dummy data instead of useRider
+  const orderHistory = dummyOrderHistory;
   const [filter, setFilter] = useState<"all" | "week" | "month">("all");
-  
+
   // Filter orders based on selection
-  const filteredOrders = orderHistory.filter(order => {
+  const filteredOrders = orderHistory.filter((order) => {
     const orderDate = new Date(order.createdAt);
     const now = new Date();
-    
+
     if (filter === "week") {
       const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       return orderDate >= lastWeek;
     } else if (filter === "month") {
-      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      const lastMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() - 1,
+        now.getDate()
+      );
       return orderDate >= lastMonth;
     }
-    
+
     return true; // "all" filter
   });
-  
+
   return (
     <div className="min-h-screen pb-20">
       <header className="bg-white shadow-sm p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Delivery History</h1>
-          <Select value={filter} onValueChange={(value: "all" | "week" | "month") => setFilter(value)}>
+          <Select
+            value={filter}
+            onValueChange={(value: "all" | "week" | "month") => setFilter(value)}
+          >
             <SelectTrigger className="w-32">
               <SelectValue placeholder="Filter" />
             </SelectTrigger>
@@ -48,7 +100,7 @@ const History = () => {
           </Select>
         </div>
       </header>
-      
+
       <main className="p-4">
         {filteredOrders.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-8 text-center">
@@ -70,29 +122,39 @@ const History = () => {
                     <div className="flex items-center text-sm text-gray-500">
                       <Calendar size={14} className="mr-1" />
                       <span>
-                        {new Date(order.createdAt).toLocaleDateString(undefined, { 
-                          month: 'short', 
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
+                        {new Date(order.createdAt).toLocaleDateString(
+                          undefined,
+                          {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          }
+                        )}
                       </span>
                       <span className="mx-2">•</span>
                       <Clock size={14} className="mr-1" />
                       <span>
-                        {new Date(order.createdAt).toLocaleTimeString(undefined, { 
-                          hour: '2-digit', 
-                          minute: '2-digit'
-                        })}
+                        {new Date(order.createdAt).toLocaleTimeString(
+                          undefined,
+                          {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }
+                        )}
                       </span>
                     </div>
                   </div>
-                  <div className={`status-badge ${
-                    order.status === "delivered" ? "status-badge-online" : "status-badge-busy"
-                  }`}>
+                  <div
+                    className={`status-badge ${
+                      order.status === "delivered"
+                        ? "status-badge-online"
+                        : "status-badge-busy"
+                    }`}
+                  >
                     {order.status === "delivered" ? "Delivered" : "Cancelled"}
                   </div>
                 </div>
-                
+
                 <div className="bg-gray-50 rounded p-3 mb-3">
                   <div className="flex items-start mb-2">
                     <div className="min-w-8 mt-1">
@@ -101,14 +163,16 @@ const History = () => {
                       </div>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">{order.restaurantAddress}</p>
+                      <p className="text-sm text-gray-600">
+                        {order.restaurantAddress}
+                      </p>
                     </div>
                   </div>
-                  
+
                   <div className="flex justify-center my-1">
                     <ArrowRight size={16} className="text-gray-400" />
                   </div>
-                  
+
                   <div className="flex items-start">
                     <div className="min-w-8 mt-1">
                       <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center">
@@ -116,11 +180,13 @@ const History = () => {
                       </div>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">{order.customerAddress}</p>
+                      <p className="text-sm text-gray-600">
+                        {order.customerAddress}
+                      </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="flex justify-between">
                   <div>
                     <p className="text-xs text-gray-500">Items</p>
@@ -132,7 +198,9 @@ const History = () => {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-gray-500">Earning</p>
-                    <p className="text-sm font-medium text-primary">${order.deliveryFee.toFixed(2)}</p>
+                    <p className="text-sm font-medium text-primary">
+                      ${order.deliveryFee.toFixed(2)}
+                    </p>
                   </div>
                 </div>
               </div>
