@@ -1,163 +1,204 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
-import { useToast } from '@/hooks/use-toast';
 
-interface Delivery {
-  _id: string;
-  orderId: string;
-  status: 'assigned' | 'in-progress' | 'pick-up' | 'en_route' | 'completed' | 'failed';
-  restaurant: {
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+
+export type OrderStatus = 
+  | "pending" 
+  | "accepted" 
+  | "arrived_at_restaurant" 
+  | "picked_up" 
+  | "en_route" 
+  | "delivered" 
+  | "cancelled";
+
+export type Order = {
+  id: string;
+  restaurantName: string;
+  restaurantAddress: string;
+  restaurantPhone: string;
+  customerName: string;
+  customerAddress: string;
+  customerPhone: string;
+  items: {
     name: string;
-    address: string;
-    location: { coordinates: [number, number] };
-    phone?: string;
-  };
-  customer: {
-    name: string;
-    address: string;
-    location: { coordinates: [number, number] };
-    phone?: string;
-  };
-  orderCode: string;
-  items: { name: string; quantity: number; price: number }[];
-  totalAmount: number;
+    quantity: number;
+    price: number;
+    notes?: string;
+  }[];
   specialInstructions?: string;
-  paymentMethod: string;
+  totalAmount: number;
   deliveryFee: number;
-}
+  createdAt: Date;
+  estimatedDeliveryTime: number; // in minutes
+  distance: number; // in km
+  status: OrderStatus;
+  paymentMethod: "cash" | "card";
+  orderCode: string;
+};
 
-interface RiderContextType {
-  availability: 'online' | 'offline' | 'busy';
-  setAvailability: (status: 'online' | 'offline' | 'busy') => void;
-  currentOrder: Delivery | null;
-  pendingOrder: Delivery | null;
-  acceptOrder: (order: Delivery) => void;
+export type RiderAvailability = "online" | "offline" | "busy";
+
+type RiderContextType = {
+  availability: RiderAvailability;
+  setAvailability: (status: RiderAvailability) => void;
+  currentOrder: Order | null;
+  pendingOrder: Order | null;
+  orderHistory: Order[];
+  earnings: {
+    today: number;
+    week: number;
+    month: number;
+  };
+  acceptOrder: (order: Order) => void;
   declineOrder: () => void;
-  updateOrderStatus: (status: 'in-progress' | 'pick-up' | 'en_route' | 'completed') => void;
+  updateOrderStatus: (status: OrderStatus) => void;
   completeOrder: () => void;
-  earnings: { today: number };
-}
+};
 
 const RiderContext = createContext<RiderContextType | undefined>(undefined);
 
+export const useRider = () => {
+  const context = useContext(RiderContext);
+  if (!context) {
+    throw new Error("useRider must be used within a RiderProvider");
+  }
+  return context;
+};
 
-export const RiderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [availability, setAvailability] = useState<'online' | 'offline' | 'busy'>('offline');
-  const [currentOrder, setCurrentOrder] = useState<Delivery | null>(null);
-  const [pendingOrder, setPendingOrder] = useState<Delivery | null>(null);
-  const [earnings, setEarnings] = useState({ today: 0 });
-  const { toast } = useToast();
+type RiderProviderProps = {
+  children: ReactNode;
+};
 
-  const API_BASE_URL = 'http://localhost:8000/api/deliveries';
-  const token = localStorage.getItem('token') || '';
-  const rider = JSON.parse(localStorage.getItem('rider') || '{}');
+// Mock order data
+const mockOrders: Order[] = [
+  {
+    id: "o123456",
+    restaurantName: "Burger King",
+    restaurantAddress: "123 Main St, Anytown",
+    restaurantPhone: "+1234567890",
+    customerName: "John Doe",
+    customerAddress: "456 Oak St, Anytown",
+    customerPhone: "+9876543210",
+    items: [
+      { name: "Whopper", quantity: 1, price: 5.99 },
+      { name: "Fries (Large)", quantity: 1, price: 2.99 },
+      { name: "Soda", quantity: 2, price: 1.99 }
+    ],
+    specialInstructions: "Please include extra ketchup",
+    totalAmount: 12.96,
+    deliveryFee: 2.50,
+    createdAt: new Date(Date.now() - 3600000),
+    estimatedDeliveryTime: 30,
+    distance: 3.2,
+    status: "delivered",
+    paymentMethod: "card",
+    orderCode: "BK1234"
+  },
+  {
+    id: "o123457",
+    restaurantName: "Pizza Hut",
+    restaurantAddress: "789 Pine St, Anytown",
+    restaurantPhone: "+1234567891",
+    customerName: "Jane Smith",
+    customerAddress: "321 Elm St, Anytown",
+    customerPhone: "+9876543211",
+    items: [
+      { name: "Large Pepperoni Pizza", quantity: 1, price: 12.99 },
+      { name: "Breadsticks", quantity: 1, price: 3.99 },
+      { name: "Soda (2L)", quantity: 1, price: 2.99 }
+    ],
+    totalAmount: 19.97,
+    deliveryFee: 3.00,
+    createdAt: new Date(Date.now() - 86400000),
+    estimatedDeliveryTime: 35,
+    distance: 4.5,
+    status: "delivered",
+    paymentMethod: "cash",
+    orderCode: "PH5678"
+  }
+];
 
-  // Poll for pending and active deliveries
+export const RiderProvider = ({ children }: RiderProviderProps) => {
+  const [availability, setAvailability] = useState<RiderAvailability>("offline");
+  const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
+  const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [orderHistory, setOrderHistory] = useState<Order[]>(mockOrders);
+  const [earnings, setEarnings] = useState({
+    today: 24.50,
+    week: 324.75,
+    month: 1245.80
+  });
+
+  // Simulate incoming orders when rider goes online
   useEffect(() => {
-    const fetchDeliveries = async () => {
-      try {
-        // Fetch pending delivery
-        const pendingResponse = await axios.get(`${API_BASE_URL}/pending/${rider?._id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setPendingOrder(pendingResponse.data.delivery || null);
-
-        // Fetch active delivery
-        const activeResponse = await axios.get(`${API_BASE_URL}/active/${rider?._id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setCurrentOrder(activeResponse.data.delivery || null);
-
-        // Update availability
-        if (activeResponse.data.delivery) {
-          setAvailability('busy');
-        } else if (!pendingResponse.data.delivery) {
-          setAvailability(availability === 'busy' ? 'online' : availability);
-        }
-      } catch (error: any) {
-        console.error('Error fetching deliveries:', error);
-        if (error.code === 'ERR_NETWORK') {
-          toast({
-            title: 'Network Error',
-            description: 'Unable to connect to the Delivery Service. Please check your connection.',
-            variant: 'destructive',
-          });
-        }
-      }
+    let orderTimer: NodeJS.Timeout;
+    
+    if (availability === "online" && !currentOrder && !pendingOrder) {
+      orderTimer = setTimeout(() => {
+        const newOrder: Order = {
+          id: "o" + Math.floor(Math.random() * 1000000),
+          restaurantName: "Tasty Thai",
+          restaurantAddress: "555 Food St, Anytown",
+          restaurantPhone: "+1234567892",
+          customerName: "Alex Johnson",
+          customerAddress: "777 Park Ave, Anytown",
+          customerPhone: "+9876543212",
+          items: [
+            { name: "Pad Thai", quantity: 1, price: 11.99 },
+            { name: "Spring Rolls", quantity: 2, price: 3.99 },
+            { name: "Thai Iced Tea", quantity: 1, price: 2.49 }
+          ],
+          specialInstructions: "Ring doorbell twice, leave at door",
+          totalAmount: 22.46,
+          deliveryFee: 3.50,
+          createdAt: new Date(),
+          estimatedDeliveryTime: 25,
+          distance: 2.7,
+          status: "pending",
+          paymentMethod: Math.random() > 0.5 ? "cash" : "card",
+          orderCode: "TT" + Math.floor(Math.random() * 10000)
+        };
+        
+        setPendingOrder(newOrder);
+      }, 5000);
+    }
+    
+    return () => {
+      clearTimeout(orderTimer);
     };
+  }, [availability, currentOrder, pendingOrder]);
 
-    fetchDeliveries();
-    const interval = setInterval(fetchDeliveries, 5000); // Poll every 5 seconds
-    return () => clearInterval(interval);
-  }, [availability, token, toast]);
-
-  const acceptOrder = async (order: Delivery) => {
-    try {
-      const response = await axios.put(
-        `${API_BASE_URL}/${order._id}/accept`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setPendingOrder(null);
-      setCurrentOrder(response.data.delivery);
-      setAvailability('busy');
-    } catch (error: any) {
-      console.error('Error accepting delivery:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to accept delivery. Please try again.',
-        variant: 'destructive',
-      });
-    }
+  const acceptOrder = (order: Order) => {
+    const updatedOrder = { ...order, status: "accepted" as OrderStatus };
+    setCurrentOrder(updatedOrder);
+    setPendingOrder(null);
+    setAvailability("busy");
   };
 
-  const declineOrder = async () => {
-    if (pendingOrder) {
-      try {
-        await axios.put(
-          `${API_BASE_URL}/${pendingOrder._id}/decline`,
-          {},
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setPendingOrder(null);
-      } catch (error: any) {
-        console.error('Error declining delivery:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to decline delivery. Please try again.',
-          variant: 'destructive',
-        });
-      }
-    }
+  const declineOrder = () => {
+    setPendingOrder(null);
   };
 
-  const updateOrderStatus = async (status: 'in-progress' | 'pick-up' | 'en_route' | 'completed') => {
+  const updateOrderStatus = (status: OrderStatus) => {
     if (currentOrder) {
-      try {
-        const response = await axios.put(
-          `${API_BASE_URL}/${currentOrder._id}/status/${status}`,
-          { earnings: currentOrder.deliveryFee },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setCurrentOrder(response.data.updatedDelivery);
-        if (status === 'completed') {
-          setEarnings((prev) => ({ today: prev.today + currentOrder.deliveryFee }));
-          setCurrentOrder(null);
-          setAvailability('online');
-        }
-      } catch (error: any) {
-        console.error('Error updating delivery status:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to update delivery status. Please try again.',
-          variant: 'destructive',
-        });
-      }
+      setCurrentOrder({ ...currentOrder, status });
     }
   };
 
   const completeOrder = () => {
-    updateOrderStatus('completed');
+    if (currentOrder) {
+      const completedOrder = { ...currentOrder, status: "delivered" as OrderStatus };
+      setOrderHistory([completedOrder, ...orderHistory]);
+      
+      // Update earnings
+      setEarnings({
+        today: earnings.today + completedOrder.deliveryFee,
+        week: earnings.week + completedOrder.deliveryFee,
+        month: earnings.month + completedOrder.deliveryFee
+      });
+      
+      setCurrentOrder(null);
+      setAvailability("online");
+    }
   };
 
   return (
@@ -167,22 +208,15 @@ export const RiderProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setAvailability,
         currentOrder,
         pendingOrder,
+        orderHistory,
+        earnings,
         acceptOrder,
         declineOrder,
         updateOrderStatus,
-        completeOrder,
-        earnings,
+        completeOrder
       }}
     >
       {children}
     </RiderContext.Provider>
   );
-};
-
-export const useRider = () => {
-  const context = useContext(RiderContext);
-  if (!context) {
-    throw new Error('useRider must be used within a RiderProvider');
-  }
-  return context;
 };
